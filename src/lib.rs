@@ -14,6 +14,7 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
+    render_pipeline: wgpu::RenderPipeline,
     window: Window,
 }
 
@@ -76,7 +77,53 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        // Color to clear the screen.
         let clear_color = wgpu::Color::BLACK;
+
+        // Creates a shader module with out file.
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            // Defines how to interepret out vertices.
+            primitive: wgpu::PrimitiveState {
+                // PrimitiveTopology::TriangleList means that every 3 vertices will be one triangle.
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw, // Means that a triangle is facing foward if its vertices are arranged in a conter-clockwise direction.
+                cull_mode: Some(wgpu::Face::Back), // Tells to cull/not render if the triangles are facing back.
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,                         // Use all samples.
+                alpha_to_coverage_enabled: false, // Related with anti-aliasing.
+            },
+            multiview: None,
+        });
 
         Self {
             window,
@@ -86,6 +133,7 @@ impl State {
             config,
             size,
             clear_color,
+            render_pipeline,
         }
     }
 
@@ -132,24 +180,30 @@ impl State {
             });
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 // Where we gonna draw colors to.
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,          // Texture to save the color to.
-                    resolve_target: None, // Texture that will receive the color. Should be None unless when using multisampling.
-                    ops: wgpu::Operations {
-                        // Tells what to do with the color.
-                        // Load tell how to handle colors stored from previous frame. We will clear the screen with a bluish color.
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        // Tell that we want to store the color in our screen texture.
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    // This is what @location(0) in the fragment shader targets to.
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &view,          // Texture to save the color to.
+                        resolve_target: None, // Texture that will receive the color. Should be None unless when using multisampling.
+                        ops: wgpu::Operations {
+                            // Tells what to do with the color.
+                            // Load tell how to handle colors stored from previous frame. We will clear the screen with a bluish color.
+                            load: wgpu::LoadOp::Clear(self.clear_color),
+                            // Tell that we want to store the color in our screen texture.
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1); // Draw 3 vertices and 1 instance.
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
