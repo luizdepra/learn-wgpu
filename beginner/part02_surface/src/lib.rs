@@ -1,4 +1,3 @@
-use wgpu::Instance;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -14,6 +13,7 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
+    clear_color: wgpu::Color,
     window: Window,
 }
 
@@ -76,6 +76,8 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        let clear_color = wgpu::Color::BLACK;
+
         Self {
             window,
             surface,
@@ -83,6 +85,7 @@ impl State {
             queue,
             config,
             size,
+            clear_color,
         }
     }
 
@@ -100,7 +103,17 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                let r = position.x as f64 / self.size.width as f64;
+                let g = position.y as f64 / self.size.height as f64;
+                let b = r * g;
+
+                self.clear_color = wgpu::Color { r, g, b, a: 1.0 };
+                true
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {}
@@ -128,12 +141,7 @@ impl State {
                     ops: wgpu::Operations {
                         // Tells what to do with the color.
                         // Load tell how to handle colors stored from previous frame. We will clear the screen with a bluish color.
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         // Tell that we want to store the color in our screen texture.
                         store: wgpu::StoreOp::Store,
                     },
