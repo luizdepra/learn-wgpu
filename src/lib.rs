@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -7,6 +8,74 @@ use winit::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+/* Reduced version:
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+*/
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        // Define how a buffer is represented in memory.
+        wgpu::VertexBufferLayout {
+            // Defines how wider a vertex is.
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            // Tells the pipeline whether each element of the array in this buffer represents per-vertex data or per-instance data.
+            step_mode: wgpu::VertexStepMode::Vertex,
+            // Describe the individual parts of the vertex. Normally 1:1 with the struct's fields.
+            attributes: &[
+                wgpu::VertexAttribute {
+                    // Memory offset until the field start.
+                    offset: 0,
+                    // Tells the shader what location to store the attribute at.
+                    shader_location: 0,
+                    // Tells the shader the shape of the attribute.
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+];
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -14,6 +83,8 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
     window: Window,
 }
 
@@ -90,7 +161,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -121,6 +192,15 @@ impl State {
             multiview: None,
         });
 
+        // Buffer is a blob of data that we send to the GPU.
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let num_vertices = VERTICES.len() as u32;
+
         Self {
             window,
             surface,
@@ -129,6 +209,8 @@ impl State {
             config,
             size,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
         }
     }
 
@@ -193,7 +275,8 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1); // Draw 3 vertices and 1 instance.
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..)); // Set the vertex buffer.
+            render_pass.draw(0..self.num_vertices, 0..1); // Draw 3 vertices and 1 instance.
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
