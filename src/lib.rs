@@ -13,7 +13,6 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
     window: Window,
 }
@@ -77,9 +76,6 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        // Color to clear the screen.
-        let clear_color = wgpu::Color::BLACK;
-
         // Creates a shader module with out file.
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let render_pipeline_layout =
@@ -132,7 +128,6 @@ impl State {
             queue,
             config,
             size,
-            clear_color,
             render_pipeline,
         }
     }
@@ -150,18 +145,8 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                let r = position.x as f64 / self.size.width as f64;
-                let g = position.y as f64 / self.size.height as f64;
-                let b = r * g;
-
-                self.clear_color = wgpu::Color { r, g, b, a: 1.0 };
-                true
-            }
-            _ => false,
-        }
+    fn input(&mut self, _event: &WindowEvent) -> bool {
+        false
     }
 
     fn update(&mut self) {}
@@ -191,7 +176,12 @@ impl State {
                         ops: wgpu::Operations {
                             // Tells what to do with the color.
                             // Load tell how to handle colors stored from previous frame. We will clear the screen with a bluish color.
-                            load: wgpu::LoadOp::Clear(self.clear_color),
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
                             // Tell that we want to store the color in our screen texture.
                             store: wgpu::StoreOp::Store,
                         },
